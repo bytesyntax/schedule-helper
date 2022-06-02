@@ -22,6 +22,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from attr import field
 
+
 SETTINGS_FILE = 'Settings/Settings.xlsx'
 FOOTER_FILE = 'Settings/Footer.xlsx'
 OUTPUT_FOLDER = 'Output/'
@@ -36,11 +37,23 @@ class EmployeeSettings:
         'role': 'dict',
         'lunch_after': 'value',
         'hours_for_lunch': 'value',
+        'col_fname': 'value',
+        'col_lname': 'value',
+        'col_id': 'value',
+        'col_date': 'value',
+        'col_shifttime': 'value',
+        'row_input_start': 'value',
         }
     # Will hold the settings + setting defaults
     settings = {
         'lunch_after': 5,
         'hours_for_lunch': 5,
+        'col_fname': 2,
+        'col_lname': 1,
+        'col_id': 0,
+        'col_date': 4,
+        'col_shifttime': 5,
+        'row_input_start': 3,
     }
     if exists(SETTINGS_FILE):
         wb = load_workbook(SETTINGS_FILE)
@@ -176,10 +189,15 @@ def main():
         print(f"Getting shift data from input: {file}")
         wb_in = load_workbook(file)
         ws_in = wb_in.active
-        for row in ws_in.iter_rows(min_row=3, values_only=True):
+        for row in ws_in.iter_rows(min_row=EmployeeSettings.settings['row_input_start'], values_only=True):
             if row[0] is not None:
-                shift = WorkShift(employee_id=row[0], employee_lname=row[2],
-                    employee_fname=row[3], date=row[5], shift_time=row[6])
+                shift = WorkShift(
+                    employee_id=row[EmployeeSettings.settings['col_id']],
+                    employee_lname=row[EmployeeSettings.settings['col_lname']],
+                    employee_fname=row[EmployeeSettings.settings['col_fname']],
+                    date=row[EmployeeSettings.settings['col_date']],
+                    shift_time=row[EmployeeSettings.settings['col_shifttime']]
+                    )
                 if shift is not None:
                     all_shifts.append(shift)
                 else:
