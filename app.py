@@ -22,11 +22,7 @@ from openpyxl.utils import get_column_letter
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from attr import field
 
-
 SETTINGS_FILE = 'Settings/Settings.xlsx'
-FOOTER_FILE = 'Settings/Footer.xlsx'
-OUTPUT_FOLDER = 'Output/'
-OPEN_DEFAULT_FOLDER = '.'
 
 @dataclass
 class EmployeeSettings:
@@ -43,24 +39,19 @@ class EmployeeSettings:
         'col_date': 'value',
         'col_shifttime': 'value',
         'row_input_start': 'value',
-        }
-    # Will hold the settings + setting defaults
-    settings = {
-        'lunch_after': 5,
-        'hours_for_lunch': 5,
-        'col_fname': 2,
-        'col_lname': 1,
-        'col_id': 0,
-        'col_date': 4,
-        'col_shifttime': 5,
-        'row_input_start': 3,
+        'footer_file': 'value',
+        'output_folder': 'value',
+        'open_default_folder': 'value',
     }
+    settings = {}
     if exists(SETTINGS_FILE):
         wb = load_workbook(SETTINGS_FILE)
         ws = wb.active
         for row in ws.iter_rows(min_row=2, values_only=True):
-            st = row[0]
+            print(row)
+            st = row[0].strip()
             if st not in setting_type:
+                print(f'Unknown setting {st}')
                 continue
             if setting_type[st] == 'dict':
                 if st not in settings:
@@ -69,7 +60,7 @@ class EmployeeSettings:
             elif setting_type[st] == 'value':
                 settings[st] = row[2]
     else:
-        print("No settings file exists, skipping functionality")
+        raise SystemExit(f'The settings file "{SETTINGS_FILE}" does not exist or is not readable')
 
     print(settings)
 
@@ -178,7 +169,7 @@ def main():
     data_in = filedialog.askopenfilenames(
         title="Pick input file(s)",
         filetypes=[('Excel files','.xlsx')],
-        initialdir=OPEN_DEFAULT_FOLDER
+        initialdir=EmployeeSettings.settings['open_default_folder']
         )
     if len(data_in) == 0:
         print("Cancelled by user")
@@ -217,7 +208,7 @@ def main():
         print(f"Creating new output workbook for week {week[0]}")
         wb_out = Workbook()
         wb_out.remove(wb_out['Sheet'])
-        out_file_name = f"{OUTPUT_FOLDER}Vecka {week[0]}.xlsx"
+        out_file_name = f"{EmployeeSettings.settings['output_folder']}Vecka {week[0]}.xlsx"
 
         for date in week_dates[week[0]]:
             print(f"Creating temporary shift data for date: {date}")
@@ -322,9 +313,9 @@ def main():
         print(f"Writing NEW FILE to: {out_file_name}")
         wb_out.save(out_file_name)
 
-        if exists(FOOTER_FILE):
-            print(f"Found footer file: {FOOTER_FILE}, adding to all sheets in {out_file_name}")
-            copy_footer(FOOTER_FILE, out_file_name)
+        if exists(EmployeeSettings.settings['footer_file']):
+            print(f"Found footer file: {EmployeeSettings.settings['footer_file']}, adding to all sheets in {out_file_name}")
+            copy_footer(EmployeeSettings.settings['footer_file'], out_file_name)
 
 if __name__ == "__main__":
     main()
