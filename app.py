@@ -21,64 +21,47 @@ from openpyxl import Workbook, load_workbook
 from openpyxl.utils import get_column_letter
 from openpyxl.styles import Font, PatternFill, Border, Side, Alignment
 from attr import field
+import yaml
+from glob import glob
+from pathlib import Path
+import csv
 
-SETTINGS_FILE = 'Settings/Settings.xlsx'
+SETTINGS_PATH_FILE = 'app.config'
+APP_CONFIG_FILE = 'config.yaml'
+EMPLOYEE_FILE = 'employee.csv'
 
-@dataclass
-class EmployeeSettings:
-    """Used for reading settings such as reserved phone numbers and stations"""
-    # Settings that will be parsed from settings file
-    setting_type = {
-        'phone': 'dict',
-        'role': 'dict',
-        'lunch_after': 'value',
-        'hours_for_lunch': 'value',
-        'col_fname': 'value',
-        'col_lname': 'value',
-        'col_id': 'value',
-        'col_date': 'value',
-        'col_shifttime': 'value',
-        'row_input_start': 'value',
-        'footer_file': 'value',
-        'output_folder': 'value',
-        'open_default_folder': 'value',
-    }
-    settings = {}
-    if exists(SETTINGS_FILE):
-        wb = load_workbook(SETTINGS_FILE)
-        ws = wb.active
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            print(row)
-            st = row[0].strip()
-            if st not in setting_type:
-                print(f'Unknown setting {st}')
-                continue
-            if setting_type[st] == 'dict':
-                if st not in settings:
-                    settings[st] = {}
-                settings[st][row[1]] = row[2]
-            elif setting_type[st] == 'value':
-                settings[st] = row[2]
-    else:
-        raise SystemExit(f'The settings file "{SETTINGS_FILE}" does not exist or is not readable')
+def parse_path(path: str) -> str:
+    return path.replace('<HOME_FOLDER>', str(Path.home())).strip()
 
-    print(settings)
+class Config:
+    _settings = None
+    _employee_data = {}
+
+    @staticmethod
+    def settings() -> dict:
+        if not Config._settings:
+            Config._build()
+        return Config._settings
+
+    @staticmethod
+    def employee_data() -> dict:
+        return Config._employee_data
 
     @classmethod
-    def get_number(cls,employee_id) -> int:
-        """Retrieve reserverd phone number for employee id"""
-        if employee_id in cls.settings['phone']:
-            return cls.settings['phone'][employee_id]
-        else:
-            return None
-
-    @classmethod
-    def get_role(cls, employee_id) -> str:
-        """Retrieve reserverd station/role for employee id"""
-        if employee_id in cls.settings['role']:
-            return cls.settings['role'][employee_id]
-        else:
-            return None
+    def _build(cls):
+        with open(SETTINGS_PATH_FILE) as f:
+            settings_path = f.readline()
+            Config._settings = yaml.safe_load(open(f'{parse_path(settings_path)}/{APP_CONFIG_FILE}'))
+        with open(parse_path(Config._settings['paths']['employee_data']) + f'/{EMPLOYEE_FILE}') as f:
+            spamreader = csv.reader(f)
+            Config._employee_data = {}
+            for row in spamreader:
+                if row[0] == 'id':
+                    continue
+                Config._employee_data[int(row[0])] = {
+                    'phone': row[1],
+                    'role': row[2],
+                }
 
 
 @dataclass
@@ -89,14 +72,12 @@ class WorkShift:
     employee_fname: str = field(repr=False)
     employee_lname: str = field(repr=False)
     shift_time: str = field(repr=False)
-
     start_time: str = field(init=False)
     end_time: str = field(init=False)
     total: datetime = field(init=False, repr=False)
     employee_name: str = field(init=False)
-    phone_number: int = field(init=False)
-    employee_role: str = field(init=False)
-
+    phone_number: int = None
+    employee_role: str = ''
     dates = []
 
     def __post_init__(self) -> None:
@@ -108,19 +89,20 @@ class WorkShift:
         self.start_time = datetime.strptime(f"{tmp_start}",'%H:%M')
         self.end_time = datetime.strptime(f"{tmp_end}",'%H:%M')
         # If entitled to lunch set it after defined hours
-        if self.end_time - self.start_time > timedelta(hours=EmployeeSettings.settings['hours_for_lunch']):
-            self.lunch = self.start_time + timedelta(hours=EmployeeSettings.settings['lunch_after'])
+        if self.end_time - self.start_time > timedelta(hours=Config.settings()['settings']['hours_for_lunch']):
+            self.lunch = self.start_time + timedelta(hours=Config.settings()['settings']['lunch_after'])
         else:
             self.lunch = None
         self.total = self.end_time - self.start_time
         if self.lunch is not None:
             self.total -= timedelta(hours=1)
-        self.phone_number = EmployeeSettings.get_number(self.employee_id)
-        self.employee_role = EmployeeSettings.get_role(self.employee_id)
+        if self.employee_id in Config.employee_data().keys():
+            self.phone_number = Config.employee_data()[self.employee_id].get('phone', None)
+            self.employee_role = Config.employee_data()[self.employee_id].get('role', None)
 
-    def map_work_time(self, time_range) -> list:
-        """Returns a list of strings to describe how the linked emplyee works during the shift"""
-        result = []
+    def get_list(self, time_range) -> list:
+        """Returns a list of strings to describe how the linked employee works during the shift"""
+        result = [self.shift_time, self.employee_name, self.phone_number]
         for time in time_range:
             tm = datetime.strptime(time, '%H:%M')
             if self.lunch is not None and\
@@ -130,7 +112,9 @@ class WorkShift:
                 result.append(self.employee_role)
             else:
                 result.append('FREE')
+        result.append(self.total)
         return result
+
 
 def copy_footer(source, destination):
     """
@@ -156,46 +140,33 @@ def copy_footer(source, destination):
                     new_cell.number_format = copy(cell.number_format)
                     new_cell.protection = copy(cell.protection)
                     new_cell.alignment = copy(cell.alignment)
-
     wb_destination.save(destination)
 
 
-def main():
-    """Main application"""
-    print("Getting input file path from user")
-    root = tk.Tk()
-    root.withdraw()
-
-    data_in = filedialog.askopenfilenames(
-        title="Pick input file(s)",
-        filetypes=[('Excel files','.xlsx')],
-        initialdir=EmployeeSettings.settings['open_default_folder']
-        )
-    if len(data_in) == 0:
-        print("Cancelled by user")
-        sys.exit()
-
+def read_shifts(input_files: list[str]) -> list[WorkShift]:
     all_shifts = []
-    for file in data_in:
+    for file in input_files:
         print(f"Getting shift data from input: {file}")
         wb_in = load_workbook(file)
         ws_in = wb_in.active
-        for row in ws_in.iter_rows(min_row=EmployeeSettings.settings['row_input_start'], values_only=True):
+        for row in ws_in.iter_rows(min_row=Config.settings()['input_format']['row_start'], values_only=True):
             if row[0] is not None:
                 shift = WorkShift(
-                    employee_id=row[EmployeeSettings.settings['col_id']],
-                    employee_lname=row[EmployeeSettings.settings['col_lname']],
-                    employee_fname=row[EmployeeSettings.settings['col_fname']],
-                    date=row[EmployeeSettings.settings['col_date']],
-                    shift_time=row[EmployeeSettings.settings['col_shifttime']]
+                    employee_id=row[Config.settings()['input_format']['col_id']],
+                    employee_lname=row[Config.settings()['input_format']['col_last_name']],
+                    employee_fname=row[Config.settings()['input_format']['col_first_name']],
+                    date=row[Config.settings()['input_format']['col_date']],
+                    shift_time=row[Config.settings()['input_format']['col_shift']]
                     )
                 if shift is not None:
                     all_shifts.append(shift)
                 else:
                     print(f"Failure to create WorkShift with input data {row}")
-
     print(f"Processed {len(all_shifts)} lines of shift data")
+    return all_shifts
 
+
+def create_schedules(shift_data: list[WorkShift], output_folder: str, footer_folder: str = None):
     print("Creating list of weeks/dates")
     week_dates = {}
     for date in WorkShift.dates:
@@ -208,14 +179,14 @@ def main():
         print(f"Creating new output workbook for week {week[0]}")
         wb_out = Workbook()
         wb_out.remove(wb_out['Sheet'])
-        out_file_name = f"{EmployeeSettings.settings['output_folder']}Vecka {week[0]}.xlsx"
+        out_file_name = f"{output_folder}/Vecka {week[0]}.xlsx"
 
         for date in week_dates[week[0]]:
             print(f"Creating temporary shift data for date: {date}")
-            current_day_shifts = []
+            current_day_shifts: list[WorkShift] = []
             current_day_earliest = None # Current day's earliest start
             current_day_latest = None # Current day's latest end
-            for shift in all_shifts:
+            for shift in shift_data:
                 if shift.date == date:
                     current_day_shifts.append(shift)
                     if current_day_earliest is None or current_day_earliest > shift.start_time:
@@ -225,8 +196,7 @@ def main():
             print(f"- Sorting {len(current_day_shifts)} shifts for current day")
             current_day_shifts.sort(key=lambda x: x.start_time)
 
-            print(f"- Generating time ranges for current date (\
-                {current_day_earliest.strftime('%H:%M')}-{current_day_latest.strftime('%H:%M')})")
+            print(f"- Generating time ranges for current date ({current_day_earliest.strftime('%H:%M')}-{current_day_latest.strftime('%H:%M')})")
             time_range = [] # Start+End of each hour (for simple print in heading)
             time_range_simple = [] # Start of each hour (for simple compare with datetime objects)
             shift_start = current_day_earliest
@@ -250,8 +220,7 @@ def main():
 
             print("- Excel: Adding shifts to current date")
             for shift in current_day_shifts:
-                ws_out.append([shift.shift_time, shift.employee_name, shift.phone_number]\
-                    + shift.map_work_time(time_range_simple) + [shift.total])
+                ws_out.append(shift.get_list(time_range_simple))
 
             print("- Excel: Printing headings at bottom as well + total time formula")
             ws_out.append(['Arbetstid','Namn','Tele'] + time_range)
@@ -313,9 +282,32 @@ def main():
         print(f"Writing NEW FILE to: {out_file_name}")
         wb_out.save(out_file_name)
 
-        if exists(EmployeeSettings.settings['footer_file']):
-            print(f"Found footer file: {EmployeeSettings.settings['footer_file']}, adding to all sheets in {out_file_name}")
-            copy_footer(EmployeeSettings.settings['footer_file'], out_file_name)
+        if footer_folder and exists(footer_folder):
+            for footer_file in glob(f'{footer_folder}/*.xlsx'):
+                print(f"Found footer file: {footer_file}, adding to all sheets in {out_file_name}")
+                copy_footer(footer_file, out_file_name)
+
+
+def main():
+    """Main application"""
+    print("Getting input file path from user")
+    root = tk.Tk()
+    root.withdraw()
+    data_in = filedialog.askopenfilenames(
+        title="Pick input file(s)",
+        filetypes=[('Excel files','.xlsx')],
+        initialdir=parse_path(Config.settings()['paths'].get('default', '.'))
+    )
+    if len(data_in) == 0:
+        print("Cancelled by user")
+        sys.exit()
+    all_shifts = read_shifts(input_files=data_in)
+    create_schedules(
+        shift_data=all_shifts,
+        output_folder=parse_path(Config.settings()['paths'].get('output', '.')),
+        footer_folder=parse_path(Config.settings()['paths'].get('footers', None))
+    )
+
 
 if __name__ == "__main__":
     main()
