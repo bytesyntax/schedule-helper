@@ -24,6 +24,7 @@ from attr import field
 import yaml
 from glob import glob
 from pathlib import Path
+from argparse import ArgumentParser
 import csv
 
 SETTINGS_PATH_FILE = 'app.config'
@@ -290,18 +291,24 @@ def create_schedules(shift_data: list[WorkShift], output_folder: str, footer_fol
 
 def main():
     """Main application"""
-    print("Getting input file path from user")
-    root = tk.Tk()
-    root.withdraw()
-    data_in = filedialog.askopenfilenames(
-        title="Pick input file(s)",
-        filetypes=[('Excel files','.xlsx')],
-        initialdir=parse_path(Config.settings()['paths'].get('default', '.'))
-    )
-    if len(data_in) == 0:
-        print("Cancelled by user")
-        sys.exit()
-    all_shifts = read_shifts(input_files=data_in)
+    parser = ArgumentParser(prog='Schedule helper')
+    parser.add_argument('--input-file', '-i', help='Input xlsx file with shift times', required=False)
+    args = parser.parse_args()
+
+    if not args.input_file:
+        print("Getting input file path from user")
+        root = tk.Tk()
+        root.withdraw()
+        args.input_file = filedialog.askopenfilenames(
+            title="Pick input file(s)",
+            filetypes=[('Excel files','.xlsx')],
+            initialdir=parse_path(Config.settings()['paths'].get('default', '.'))
+        )
+        if len(args.input_file) == 0:
+            print("Cancelled by user")
+            sys.exit()
+
+    all_shifts = read_shifts(input_files=args.input_file)
     create_schedules(
         shift_data=all_shifts,
         output_folder=parse_path(Config.settings()['paths'].get('output', '.')),
