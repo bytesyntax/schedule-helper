@@ -1,5 +1,0 @@
-attrs==25.3.0
-et_xmlfile==2.0.0
-field==0.2.0
-openpyxl==3.1.5
-PyYAML==6.0.2
