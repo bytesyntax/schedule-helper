@@ -127,3 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# skip excel data files
+*.xlsx
+
+# built main.go
+main

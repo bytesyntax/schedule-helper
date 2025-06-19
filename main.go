@@ -51,6 +51,14 @@ var (
 	styleHeader   = 0
 )
 
+type FooterCell struct {
+	Row   int
+	Col   int
+	Value interface{}
+	Style *excelize.Style
+	Merge string // optional: e.g., "C20:D20"
+}
+
 func main() {
 	// Read settings file
 	// This file contains employeeId, phone and role
@@ -111,14 +119,6 @@ func main() {
 		fmt.Println("Error creating weekly schedules", err)
 		return
 	}
-}
-
-type FooterCell struct {
-	Row   int
-	Col   int
-	Value interface{}
-	Style *excelize.Style
-	Merge string // optional: e.g., "C20:D20"
 }
 
 /*
