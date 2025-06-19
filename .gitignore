@@ -133,3 +133,6 @@ dmypy.json
 
 # built main.go
 main
+
+.DS_Store
+**/.vscode
