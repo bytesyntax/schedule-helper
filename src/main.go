@@ -203,9 +203,9 @@ func processFiles(input io.Reader, settings io.Reader, footer io.Reader) (map[st
 }
 
 func main() {
-	http.HandleFunc("/upload", uploadHandler)
-	fmt.Println("Server started at http://localhost:8080/upload")
-	http.ListenAndServe(":8080", nil)
+	http.HandleFunc("/", uploadHandler)
+	fmt.Println("Server started at http://localhost:8999")
+	http.ListenAndServe(":8999", nil)
 }
 
 func readSettingsFile(r io.Reader) (dataframe.DataFrame, error) {

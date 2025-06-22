@@ -10,6 +10,6 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o app .
 
 FROM scratch
 
-COPY --from=builder /build/app /app
+COPY --from=builder /build/app /build/upload.html /
 
 CMD [ "/app" ]
