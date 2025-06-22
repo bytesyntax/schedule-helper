@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Schedule Helper</title>
+</head>
+<body>
+  <h1>Upload Excel Files</h1>
+  <form enctype="multipart/form-data" action="/upload" method="post">
+    <label>Shift data file (*.xlsx):</label><br>
+    <input type="file" name="inputFile" required><br><br>
+    
+    <label>Settings file for adding phone numbers and roles (*.xlsx):</label><br>
+    <input type="file" name="settingsFile"><br><br>
+    
+    <label>Footer file for copying into each sheet (*.xlsx):</label><br>
+    <input type="file" name="footerFile"><br><br>
+    
+    <input type="submit" value="Create schedules">
+  </form>
+</body>
+</html>

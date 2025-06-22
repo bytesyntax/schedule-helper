@@ -1,8 +1,12 @@
 package main
 
 import (
+	"archive/zip"
+	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"slices"
 	"strconv"
 	"strings"
@@ -59,27 +63,170 @@ type FooterCell struct {
 	Merge string // optional: e.g., "C20:D20"
 }
 
-func main() {
-	// Read settings file
-	// This file contains employeeId, phone and role
-	settingsFile, err := excelize.OpenFile("Settings.xlsx")
-	if err != nil {
-		fmt.Println("Error opening settings file:", err)
+// func main() {
+// Read settings file
+// This file contains employeeId, phone and role
+// settingsFile, err := excelize.OpenFile("Settings.xlsx")
+// if err != nil {
+// 	fmt.Println("Error opening settings file:", err)
+// 	return
+// }
+// settingsData, err := settingsFile.GetRows(settingsFile.GetSheetName(settingsFile.GetActiveSheetIndex()))
+// if err != nil {
+// 	fmt.Println("Error getting settings rows:", err)
+// 	return
+// }
+// if len(settingsData) < 2 {
+// 	fmt.Println("Settings file is empty or has no data")
+// 	return
+// }
+// settingsDf := excelRowsToDataFrame(settingsData[1:]) // Skip header row
+// if settingsDf.Ncol() < 3 {
+// 	fmt.Println("Settings file does not have enough columns")
+// 	return
+// }
+// if settingsDf.Ncol() > 3 {
+// 	fmt.Println("Settings file has more than 3 columns, only first 3 will be used")
+// 	settingsDf = settingsDf.Subset([]int{0, 1, 2}) // Keep only first 3 columns
+// }
+// err = settingsDf.SetNames("employeeId", "phone", "role")
+// if err != nil {
+// 	fmt.Println("Error setting DataFrame column names:", err)
+// 	return
+// }
+
+// Read input data
+// This file contains employeeId, lastName, firstName, shiftType, date, time and department
+// 	df, err := readAndRefineInputData("DailyStaffingSchedule_1348853_1494f5a70b167da50a8.xlsx", settingsDf)
+// 	if err != nil {
+// 		fmt.Println("Error reading input data:", err)
+// 		return
+// 	}
+
+// 	// Read and prepare footer file
+// 	// This file contains footer data and styles to be applied to each daily schedule
+// 	footerFile, err := excelize.OpenFile("Footer.xlsx")
+// 	if err != nil {
+// 		fmt.Println("Error opening footer file:", err)
+// 		return
+// 	}
+// 	footer, err := PrepareFooter(footerFile, footerFile.GetSheetName(footerFile.GetActiveSheetIndex()))
+// 	if err != nil {
+// 		fmt.Println("Error preparing footer:", err)
+// 		return
+// 	}
+
+// 	// Create weekly schedules
+// 	// This will create a new excel file for each week with daily schedules as sheets
+// 	err = createWeekSchedules(df, footer)
+// 	if err != nil {
+// 		fmt.Println("Error creating weekly schedules", err)
+// 		return
+// 	}
+// }
+
+func uploadHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "POST" {
+		http.ServeFile(w, r, "upload.html")
 		return
 	}
-	settingsData, err := settingsFile.GetRows(settingsFile.GetSheetName(settingsFile.GetActiveSheetIndex()))
+
+	// Parse multipart form
+	err := r.ParseMultipartForm(10 << 20) // 10 MB
 	if err != nil {
-		fmt.Println("Error getting settings rows:", err)
+		http.Error(w, "Cannot parse form", http.StatusBadRequest)
 		return
+	}
+
+	// Retrieve files
+	inputFile, _, err := r.FormFile("inputFile")
+	if err != nil {
+		http.Error(w, "Required input file missing", http.StatusBadRequest)
+		return
+	}
+	defer inputFile.Close()
+
+	settingsFile, _, _ := r.FormFile("settingsFile")
+	if settingsFile != nil {
+		defer settingsFile.Close()
+	}
+
+	footerFile, _, _ := r.FormFile("footerFile")
+	if footerFile != nil {
+		defer footerFile.Close()
+	}
+
+	// Save or process the files
+	result, err := processFiles(inputFile, settingsFile, footerFile)
+	if err != nil {
+		http.Error(w, "Error processing files: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+
+	zipAndReturnFiles(w, result)
+	fmt.Fprintf(w, "Files received and processed")
+}
+
+func zipAndReturnFiles(w http.ResponseWriter, files map[string][]byte) {
+	var buf bytes.Buffer
+	zipWriter := zip.NewWriter(&buf)
+
+	for name, content := range files {
+		f, _ := zipWriter.Create(name)
+		f.Write(content)
+	}
+	zipWriter.Close()
+
+	w.Header().Set("Content-Disposition", "attachment; filename=schedules.zip")
+	w.Header().Set("Content-Type", "application/zip")
+	w.Write(buf.Bytes())
+}
+
+func processFiles(input io.Reader, settings io.Reader, footer io.Reader) (map[string][]byte, error) {
+	// Here you would add your logic to read Excel files (e.g., using "github.com/xuri/excelize")
+	// and generate outputs
+	fmt.Println("Processing files...")
+	var settingsDf dataframe.DataFrame
+	settingsDf, _ = readSettingsFile(settings)
+	df, err := readAndRefineInputData(input, settingsDf)
+	if err != nil {
+		return nil, errors.New("Error reading input data: " + err.Error())
+	}
+	footerData, _ := PrepareFooter(footer, "Sheet1")
+
+	result, err := createWeekSchedules(df, footerData)
+	if err != nil {
+		return nil, errors.New("Error creating weekly schedules: " + err.Error())
+	}
+
+	return result, nil
+}
+
+func main() {
+	http.HandleFunc("/upload", uploadHandler)
+	fmt.Println("Server started at http://localhost:8080/upload")
+	http.ListenAndServe(":8080", nil)
+}
+
+func readSettingsFile(r io.Reader) (dataframe.DataFrame, error) {
+	// Read settings file
+	// This file contains employeeId, phone and role
+	sr, err := excelize.OpenReader(r)
+	if err != nil {
+		return dataframe.DataFrame{}, errors.New("Error opening settings file: " + err.Error())
+	}
+	settingsData, err := sr.GetRows(sr.GetSheetName(sr.GetActiveSheetIndex()))
+	if err != nil {
+		return dataframe.DataFrame{}, errors.New("Error getting settings rows: " + err.Error())
 	}
 	if len(settingsData) < 2 {
 		fmt.Println("Settings file is empty or has no data")
-		return
+		return dataframe.DataFrame{}, nil
 	}
 	settingsDf := excelRowsToDataFrame(settingsData[1:]) // Skip header row
 	if settingsDf.Ncol() < 3 {
 		fmt.Println("Settings file does not have enough columns")
-		return
+		return dataframe.DataFrame{}, nil
 	}
 	if settingsDf.Ncol() > 3 {
 		fmt.Println("Settings file has more than 3 columns, only first 3 will be used")
@@ -88,37 +235,10 @@ func main() {
 	err = settingsDf.SetNames("employeeId", "phone", "role")
 	if err != nil {
 		fmt.Println("Error setting DataFrame column names:", err)
-		return
+		return dataframe.DataFrame{}, nil
 	}
 
-	// Read input data
-	// This file contains employeeId, lastName, firstName, shiftType, date, time and department
-	df, err := readAndRefineInputData("DailyStaffingSchedule_1348853_1494f5a70b167da50a8.xlsx", settingsDf)
-	if err != nil {
-		fmt.Println("Error reading input data:", err)
-		return
-	}
-
-	// Read and prepare footer file
-	// This file contains footer data and styles to be applied to each daily schedule
-	footerFile, err := excelize.OpenFile("Footer.xlsx")
-	if err != nil {
-		fmt.Println("Error opening footer file:", err)
-		return
-	}
-	footer, err := PrepareFooter(footerFile, footerFile.GetSheetName(footerFile.GetActiveSheetIndex()))
-	if err != nil {
-		fmt.Println("Error preparing footer:", err)
-		return
-	}
-
-	// Create weekly schedules
-	// This will create a new excel file for each week with daily schedules as sheets
-	err = createWeekSchedules(df, footer)
-	if err != nil {
-		fmt.Println("Error creating weekly schedules", err)
-		return
-	}
+	return settingsDf, nil
 }
 
 /*
@@ -126,7 +246,9 @@ func main() {
 Create a excel workbook per week
 ================================================================================
 */
-func createWeekSchedules(df dataframe.DataFrame, footer []FooterCell) error {
+func createWeekSchedules(df dataframe.DataFrame, footer []FooterCell) (map[string][]byte, error) {
+	var results = make(map[string][]byte)
+
 	var wg sync.WaitGroup
 	wg.Add(len(df.GroupBy("weekNumber").GetGroups()))
 
@@ -153,12 +275,22 @@ func createWeekSchedules(df dataframe.DataFrame, footer []FooterCell) error {
 				}
 			}
 			f.DeleteSheet("Sheet1")
-			f.SaveAs(fmt.Sprintf("Vecka %v.xlsx", weekNumber))
+
+			fn := fmt.Sprintf("Vecka %v.xlsx", weekNumber)
+			results[fn] = nil // Initialize the map entry
+			// Save the file to a buffer
+			var err error
+			buf, err := f.WriteToBuffer()
+			if err != nil {
+				panic(fmt.Errorf("error writing to buffer: %v", err))
+			}
+			results[fn] = buf.Bytes()
+			// f.SaveAs(fmt.Sprintf("Vecka %v.xlsx", weekNumber))
 		}()
 	}
 
 	wg.Wait()
-	return nil
+	return results, nil
 }
 
 /*
@@ -173,7 +305,7 @@ func createDaySchedule(file *excelize.File, dateDf dataframe.DataFrame, footer [
 	)
 	dayData, err := parseDayData(dateDf)
 	if err != nil {
-		return errors.New("Error getting day schedule: " + err.Error())
+		return errors.New("error getting day schedule: " + err.Error())
 	}
 
 	sheetName := dayData.dayStr
@@ -183,15 +315,15 @@ func createDaySchedule(file *excelize.File, dateDf dataframe.DataFrame, footer [
 	// Title row
 	titleStartCell, err := excelize.CoordinatesToCellName(1, 1)
 	if err != nil {
-		return fmt.Errorf("Error getting title start cell: %v", err)
+		return fmt.Errorf("error getting title start cell: %v", err)
 	}
 	titleEndCell, err := excelize.CoordinatesToCellName(len(dayData.headers), 1)
 	if err != nil {
-		return fmt.Errorf("Error getting title end cell: %v", err)
+		return fmt.Errorf("error getting title end cell: %v", err)
 	}
 	err = file.MergeCell(sheetName, titleStartCell, titleEndCell)
 	if err != nil {
-		return fmt.Errorf("Error merging cells: %v", err)
+		return fmt.Errorf("error merging cells: %v", err)
 	}
 	file.SetCellValue(sheetName, titleStartCell, dayData.dayStr+" - "+dayData.dateStr)
 	file.SetCellStyle(sheetName, titleStartCell, titleEndCell, styleTitle)
@@ -201,7 +333,7 @@ func createDaySchedule(file *excelize.File, dateDf dataframe.DataFrame, footer [
 	for colIdx := 0; colIdx < len(dayData.headers); colIdx++ {
 		cell, err := excelize.CoordinatesToCellName(colIdx+1, 2)
 		if err != nil {
-			return fmt.Errorf("Error calculating cell for header row %v", err)
+			return fmt.Errorf("error calculating cell for header row %v", err)
 		}
 		file.SetCellValue(sheetName, cell, dayData.headers[colIdx])
 		file.SetCellStyle(sheetName, cell, cell, styleHeader)
@@ -226,7 +358,7 @@ func createDaySchedule(file *excelize.File, dateDf dataframe.DataFrame, footer [
 		for hourIdx := 0; hourIdx < len(dayData.shifts[dataIdx].hourSchedule)-1; hourIdx++ { // Skip last hourSchedule since headers compacted by one!!!
 			cell, err := excelize.CoordinatesToCellName(hourIdx+hourOffset, dataIdx+rowOffset)
 			if err != nil {
-				return fmt.Errorf("Error calculating cell for hour %d, row %d: %v", hourIdx, dataIdx+rowOffset, err)
+				return fmt.Errorf("error calculating cell for hour %d, row %d: %v", hourIdx, dataIdx+rowOffset, err)
 			}
 
 			// For each hour for current row, set the value and style
@@ -253,14 +385,20 @@ func createDaySchedule(file *excelize.File, dateDf dataframe.DataFrame, footer [
 		totalOffset += 1
 	}
 	timeColStart, err := excelize.ColumnNumberToName(hourOffset)
+	if err != nil {
+		return fmt.Errorf("error calculating time column start: %v", err)
+	}
 	timeColEnd, err := excelize.ColumnNumberToName(hourOffset + len(dayData.shifts[0].hourSchedule) - 1)
+	if err != nil {
+		return fmt.Errorf("error calculating time column end: %v", err)
+	}
 	file.SetColWidth(sheetName, timeColStart, timeColEnd, 12)
 
 	// Header row (trailing)
 	for colIdx := 0; colIdx < len(dayData.headers); colIdx++ {
 		cell, err := excelize.CoordinatesToCellName(colIdx+1, totalOffset)
 		if err != nil {
-			return fmt.Errorf("Error calculating cell for header row %v", err)
+			return fmt.Errorf("error calculating cell for header row %v", err)
 		}
 		file.SetCellValue(sheetName, cell, dayData.headers[colIdx])
 		file.SetCellStyle(sheetName, cell, cell, styleHeader)
@@ -277,13 +415,13 @@ func createDaySchedule(file *excelize.File, dateDf dataframe.DataFrame, footer [
 Read and refine input file with time data
 ================================================================================
 */
-func readAndRefineInputData(path string, settingsDf dataframe.DataFrame) (dataframe.DataFrame, error) {
-	f, err := excelize.OpenFile(path)
+func readAndRefineInputData(r io.Reader, settingsDf dataframe.DataFrame) (dataframe.DataFrame, error) {
+	fr, err := excelize.OpenReader(r)
 	if err != nil {
 		return dataframe.DataFrame{}, errors.New("Error opening file: " + err.Error())
 	}
 
-	rows, err := f.GetRows("Worksheet")
+	rows, err := fr.GetRows("Worksheet")
 	if err != nil {
 		return dataframe.DataFrame{}, errors.New("Error getting rows: " + err.Error())
 	}
@@ -562,8 +700,13 @@ Handle footer from file
 */
 
 // PrepareFooter extracts data+styles once and returns a reusable slice
-func PrepareFooter(srcFile *excelize.File, sheet string) ([]FooterCell, error) {
+func PrepareFooter(r io.Reader, sheet string) ([]FooterCell, error) {
 	var footer []FooterCell
+
+	srcFile, err := excelize.OpenReader(r)
+	if err != nil {
+		return footer, errors.New("Error opening footer file: " + err.Error())
+	}
 
 	rows, err := srcFile.GetRows(sheet)
 	if err != nil {
