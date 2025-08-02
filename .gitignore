@@ -136,3 +136,6 @@ main
 
 .DS_Store
 **/.vscode
+
+# output dir
+delivery

@@ -1,15 +1,15 @@
-FROM golang:1.24.4-bookworm AS builder
+FROM golang:1.24.5-bookworm AS builder
 
 WORKDIR /build
 
-COPY ./src/* ./
+COPY . .
 
-RUN go mod download && go mod verify
+RUN go mod tidy
 
-RUN CGO_ENABLED=0 GOOS=linux go build -o app .
+RUN CGO_ENABLED=0 GOOS=linux go build -tags headless -o server ./cmd/container
 
 FROM scratch
 
-COPY --from=builder /build/app /build/upload.html /
+COPY --from=builder /build/server /build/static/upload.html /
 
-CMD [ "/app" ]
+CMD [ "/server" ]

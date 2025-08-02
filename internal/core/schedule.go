@@ -1,12 +1,10 @@
-package main
+package core
 
 import (
-	"archive/zip"
-	"bytes"
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
+	"log"
 	"slices"
 	"strconv"
 	"strings"
@@ -63,149 +61,21 @@ type FooterCell struct {
 	Merge string // optional: e.g., "C20:D20"
 }
 
-// func main() {
-// Read settings file
-// This file contains employeeId, phone and role
-// settingsFile, err := excelize.OpenFile("Settings.xlsx")
-// if err != nil {
-// 	fmt.Println("Error opening settings file:", err)
-// 	return
-// }
-// settingsData, err := settingsFile.GetRows(settingsFile.GetSheetName(settingsFile.GetActiveSheetIndex()))
-// if err != nil {
-// 	fmt.Println("Error getting settings rows:", err)
-// 	return
-// }
-// if len(settingsData) < 2 {
-// 	fmt.Println("Settings file is empty or has no data")
-// 	return
-// }
-// settingsDf := excelRowsToDataFrame(settingsData[1:]) // Skip header row
-// if settingsDf.Ncol() < 3 {
-// 	fmt.Println("Settings file does not have enough columns")
-// 	return
-// }
-// if settingsDf.Ncol() > 3 {
-// 	fmt.Println("Settings file has more than 3 columns, only first 3 will be used")
-// 	settingsDf = settingsDf.Subset([]int{0, 1, 2}) // Keep only first 3 columns
-// }
-// err = settingsDf.SetNames("employeeId", "phone", "role")
-// if err != nil {
-// 	fmt.Println("Error setting DataFrame column names:", err)
-// 	return
-// }
-
-// Read input data
-// This file contains employeeId, lastName, firstName, shiftType, date, time and department
-// 	df, err := readAndRefineInputData("DailyStaffingSchedule_1348853_1494f5a70b167da50a8.xlsx", settingsDf)
-// 	if err != nil {
-// 		fmt.Println("Error reading input data:", err)
-// 		return
-// 	}
-
-// 	// Read and prepare footer file
-// 	// This file contains footer data and styles to be applied to each daily schedule
-// 	footerFile, err := excelize.OpenFile("Footer.xlsx")
-// 	if err != nil {
-// 		fmt.Println("Error opening footer file:", err)
-// 		return
-// 	}
-// 	footer, err := PrepareFooter(footerFile, footerFile.GetSheetName(footerFile.GetActiveSheetIndex()))
-// 	if err != nil {
-// 		fmt.Println("Error preparing footer:", err)
-// 		return
-// 	}
-
-// 	// Create weekly schedules
-// 	// This will create a new excel file for each week with daily schedules as sheets
-// 	err = createWeekSchedules(df, footer)
-// 	if err != nil {
-// 		fmt.Println("Error creating weekly schedules", err)
-// 		return
-// 	}
-// }
-
-func uploadHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		http.ServeFile(w, r, "upload.html")
-		return
-	}
-
-	// Parse multipart form
-	err := r.ParseMultipartForm(10 << 20) // 10 MB
-	if err != nil {
-		http.Error(w, "Cannot parse form", http.StatusBadRequest)
-		return
-	}
-
-	// Retrieve files
-	inputFile, _, err := r.FormFile("inputFile")
-	if err != nil {
-		http.Error(w, "Required input file missing", http.StatusBadRequest)
-		return
-	}
-	defer inputFile.Close()
-
-	settingsFile, _, _ := r.FormFile("settingsFile")
-	if settingsFile != nil {
-		defer settingsFile.Close()
-	}
-
-	footerFile, _, _ := r.FormFile("footerFile")
-	if footerFile != nil {
-		defer footerFile.Close()
-	}
-
-	// Save or process the files
-	result, err := processFiles(inputFile, settingsFile, footerFile)
-	if err != nil {
-		http.Error(w, "Error processing files: "+err.Error(), http.StatusInternalServerError)
-		return
-	}
-
-	zipAndReturnFiles(w, result)
-	fmt.Fprintf(w, "Files received and processed")
-}
-
-func zipAndReturnFiles(w http.ResponseWriter, files map[string][]byte) {
-	var buf bytes.Buffer
-	zipWriter := zip.NewWriter(&buf)
-
-	for name, content := range files {
-		f, _ := zipWriter.Create(name)
-		f.Write(content)
-	}
-	zipWriter.Close()
-
-	w.Header().Set("Content-Disposition", "attachment; filename=schedules.zip")
-	w.Header().Set("Content-Type", "application/zip")
-	w.Write(buf.Bytes())
-}
-
-func processFiles(input io.Reader, settings io.Reader, footer io.Reader) (map[string][]byte, error) {
-	// Here you would add your logic to read Excel files (e.g., using "github.com/xuri/excelize")
-	// and generate outputs
-	fmt.Println("Processing files...")
+func ProcessFiles(input io.Reader, settings io.Reader, footer io.Reader) (map[string][]byte, error) {
+	log.Println("Processing files...")
 	var settingsDf dataframe.DataFrame
 	settingsDf, _ = readSettingsFile(settings)
 	df, err := readAndRefineInputData(input, settingsDf)
 	if err != nil {
 		return nil, errors.New("Error reading input data: " + err.Error())
 	}
-	footerData, _ := PrepareFooter(footer, "Sheet1")
 
-	result, err := createWeekSchedules(df, footerData)
+	result, err := createWeekSchedules(df, footer)
 	if err != nil {
 		return nil, errors.New("Error creating weekly schedules: " + err.Error())
 	}
 
 	return result, nil
-}
-
-func main() {
-	http.HandleFunc("/", uploadHandler)
-	fmt.Println("Server started at http://localhost:8999")
-	http.ListenAndServe(":8999", nil)
 }
 
 func readSettingsFile(r io.Reader) (dataframe.DataFrame, error) {
@@ -246,9 +116,17 @@ func readSettingsFile(r io.Reader) (dataframe.DataFrame, error) {
 Create a excel workbook per week
 ================================================================================
 */
-func createWeekSchedules(df dataframe.DataFrame, footer []FooterCell) (map[string][]byte, error) {
+func createWeekSchedules(df dataframe.DataFrame, footerReader io.Reader) (map[string][]byte, error) {
 	var results = make(map[string][]byte)
 
+	// Prepare footer
+	footer := []FooterCell{}
+	footer, err := PrepareFooter(footerReader, "Footer")
+	if err != nil {
+		fmt.Println("Error preparing footer:", err, " - footer will not be applied")
+	}
+
+	// Create a new file for each week
 	var wg sync.WaitGroup
 	wg.Add(len(df.GroupBy("weekNumber").GetGroups()))
 
@@ -258,6 +136,7 @@ func createWeekSchedules(df dataframe.DataFrame, footer []FooterCell) (map[strin
 		go func() {
 			defer wg.Done()
 			f := excelize.NewFile()
+			defer f.Close()
 			setStyles(f)
 
 			for _, dateDf := range weekDf.GroupBy("date").GetGroups() {
@@ -280,7 +159,7 @@ func createWeekSchedules(df dataframe.DataFrame, footer []FooterCell) (map[strin
 			results[fn] = nil // Initialize the map entry
 			// Save the file to a buffer
 			var err error
-			buf, err := f.WriteToBuffer()
+			buf, err := f.WriteToBuffer() //TODO: intermitten bug "concurrent map writes"
 			if err != nil {
 				panic(fmt.Errorf("error writing to buffer: %v", err))
 			}
