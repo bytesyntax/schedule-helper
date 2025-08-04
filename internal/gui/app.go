@@ -44,20 +44,43 @@ func RunStandalone() {
 	myApp := app.NewWithID("github.com/bytesyntax/schedulehelper")
 	mainWindow := myApp.NewWindow("Main App")
 	mainWindow.Resize(fyne.NewSize(300, 200))
+	mainWindow.SetFixedSize(true)
 
 	// Ensure any child windows close when main closes
 	childWindows := []*fyne.Window{}
+	childWindowSize := fyne.NewSize(800, 600)
 
 	openFile := func(title string) {
 		// Create a new window just for the file dialog
 		childWin := myApp.NewWindow("Select " + title)
-		childWin.Resize(fyne.NewSize(800, 600))
+		childWin.Resize(childWindowSize)
+		childWin.SetFixedSize(true)
 
 		// Add to child window list for cleanup
 		childWindows = append(childWindows, &childWin)
 
 		// File open dialog
-		dialog.ShowFileOpen(func(reader fyne.URIReadCloser, err error) {
+		fileDialog := dialog.NewFileOpen(func(reader fyne.URIReadCloser, err error) {
+			// Update labels and button status
+			defer func() {
+				// Generate button only active if Input File available
+				if fileSelections["Input File"].Exists() {
+					generateBtn.Enable()
+				} else {
+					generateBtn.Disable()
+				}
+				// Update label text to reflect file exists
+				for _, fs := range fileSelections {
+					if fs.Path == "" {
+						continue
+					}
+					if fs.Exists() {
+						fs.Label.SetText("\u2705" + " " + fs.Path)
+					} else {
+						fs.Label.SetText("\u274C" + " " + fs.Path)
+					}
+				}
+			}()
 			if err != nil {
 				log.Println("Error:", err)
 				childWin.Close()
@@ -74,13 +97,13 @@ func RunStandalone() {
 			fs := fileSelections[title]
 			fs.Path = filePath
 			fs.FileName = fileName
-			fs.Label.SetText("Selected: " + fileName)
 
 			log.Printf("%s selected: %s", title, filePath)
 
 			childWin.Close()
 		}, childWin)
-		generateBtn.Enable()
+		fileDialog.Resize(childWindowSize)
+		fileDialog.Show()
 		childWin.Show()
 	}
 
@@ -91,19 +114,21 @@ func RunStandalone() {
 	layout.Add(titleLbl)
 
 	// Open file buttons/labels
-	for title, fs := range fileSelections {
+	for _, btn := range []string{"Input File", "Settings File", "Footer File"} {
+		fs := fileSelections[btn]
 		fs.Label = widget.NewLabel("No file selected")
 		fs.Label.TextStyle = fyne.TextStyle{
 			Monospace: true,
 		}
 
-		openBtn := widget.NewButton("Select "+title, func(t string) func() {
+		openBtn := widget.NewButton("Select "+btn, func(t string) func() {
 			return func() {
 				openFile(t)
 			}
-		}(title))
+		}(btn))
 		openBtn.Importance = widget.MediumImportance
 		fs.Label.Importance = widget.LowImportance
+		fs.Label.Wrapping = fyne.TextWrap(fyne.TextTruncateEllipsis)
 		layout.Add(openBtn)
 		layout.Add(fs.Label)
 	}
@@ -171,4 +196,13 @@ func RunStandalone() {
 	})
 
 	mainWindow.ShowAndRun()
+}
+
+func (fs FileSelection) Exists() bool {
+	if fs.Path != "" {
+		if _, err := os.Stat(fs.Path); err == nil {
+			return true
+		}
+	}
+	return false
 }

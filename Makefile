@@ -16,5 +16,5 @@ desktop: linux windows darwin
 mobile: android ios
 
 linux windows darwin android ios:
-	fyne-cross $@ --arch=$(${@}_arch) --app-id=$(app-name) --app-version=$(app-version) --name=schedulehelper ./cmd/schedulehelper
+	fyne-cross $@ --arch=$(${@}_arch) --app-id=$(app-name) --app-version=$(app-version) --icon='assets/Icon.png' --name=schedulehelper ./cmd/schedulehelper
 
