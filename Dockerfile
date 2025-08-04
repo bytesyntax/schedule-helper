@@ -10,6 +10,6 @@ RUN CGO_ENABLED=0 GOOS=linux go build -tags headless -o server ./cmd/container
 
 FROM scratch
 
-COPY --from=builder /build/server /build/static/upload.html /
+COPY --from=builder /build/server /build/assets/upload.html /
 
 CMD [ "/server" ]
