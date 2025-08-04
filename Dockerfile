@@ -6,7 +6,7 @@ COPY . .
 
 RUN go mod tidy
 
-RUN CGO_ENABLED=0 GOOS=linux go build -tags headless -o server ./cmd/container
+RUN CGO_ENABLED=0 GOOS=linux go build -tags headless -o server ./cmd/schedulehelper_server
 
 FROM scratch
 

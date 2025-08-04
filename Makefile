@@ -1,6 +1,6 @@
 .PHONY: all desktop mobile linux darwin windows android ios
 
-app-name = https://github.com/bytesyntax/schedulehelper
+app-name = github.com/bytesyntax/schedulehelper
 app-version = 1.0.0
 
 linux_arch   = amd64,arm64
@@ -16,5 +16,5 @@ desktop: linux windows darwin
 mobile: android ios
 
 linux windows darwin android ios:
-	fyne-cross $@ --arch=$(${@}_arch) --app-id=$(app-name) --app-version=$(app-version) --name=schedulehelper ./cmd/standalone
+	fyne-cross $@ --arch=$(${@}_arch) --app-id=$(app-name) --app-version=$(app-version) --name=schedulehelper ./cmd/schedulehelper
 
