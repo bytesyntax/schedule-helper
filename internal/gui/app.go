@@ -44,7 +44,6 @@ func RunStandalone() {
 	myApp := app.NewWithID("github.com/bytesyntax/schedulehelper")
 	mainWindow := myApp.NewWindow("Main App")
 	mainWindow.Resize(fyne.NewSize(300, 200))
-	mainWindow.SetFixedSize(true)
 
 	// Ensure any child windows close when main closes
 	childWindows := []*fyne.Window{}
