@@ -3,7 +3,7 @@
 
 package main
 
-import "github.com/bytesyntax/schedulehelper/internal/gui"
+import "github.com/bytesyntax/schedule-helper/internal/gui"
 
 func main() {
 	gui.RunStandalone()

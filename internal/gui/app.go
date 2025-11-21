@@ -16,7 +16,7 @@ import (
 	"fyne.io/fyne/v2/container"
 	"fyne.io/fyne/v2/dialog"
 	"fyne.io/fyne/v2/widget"
-	"github.com/bytesyntax/schedulehelper/internal/core"
+	"github.com/bytesyntax/schedule-helper/internal/core"
 )
 
 type FileSelection struct {
