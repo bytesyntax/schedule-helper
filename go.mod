@@ -1,4 +1,4 @@
-module github.com/bytesyntax/schedulehelper
+module github.com/bytesyntax/schedule-helper
 
 go 1.23.5
 

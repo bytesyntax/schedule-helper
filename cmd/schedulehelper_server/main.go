@@ -3,7 +3,7 @@
 
 package main
 
-import "github.com/bytesyntax/schedulehelper/internal/core"
+import "github.com/bytesyntax/schedule-helper/internal/core"
 
 func main() {
 	core.RunHeadless()
