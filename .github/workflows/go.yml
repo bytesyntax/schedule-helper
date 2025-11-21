@@ -24,6 +24,21 @@ jobs:
       with:
         go-version: '1.25'
 
+    - name: Install GUI dependencies for Fyne/GLFW
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          libx11-dev \
+          libxrandr-dev \
+          libxcursor-dev \
+          libxinerama-dev \
+          libxi-dev \
+          libgl1-mesa-dev \
+          libxxf86vm-dev \
+          libxkbcommon-dev \
+          libxkbcommon-x11-dev \
+          xorg-dev
+
     - name: Build
       run: go build -v ./...
 
