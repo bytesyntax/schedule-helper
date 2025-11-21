@@ -7,6 +7,11 @@ import (
 	"net/http"
 )
 
+// ProcessFunc is used by the HTTP handler to process uploaded files.
+// Tests can replace this with a stub implementation. By default it
+// points to the real `ProcessFiles` function.
+var ProcessFunc = ProcessFiles
+
 /*
 ================================================================================
 Start web server
@@ -54,15 +59,14 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		defer footerFile.Close()
 	}
 
-	// Save or process the files
-	result, err := ProcessFiles(inputFile, settingsFile, footerFile)
+	// Save or process the files (use injectable ProcessFunc for testability)
+	result, err := ProcessFunc(inputFile, settingsFile, footerFile)
 	if err != nil {
 		http.Error(w, "Error processing files: "+err.Error(), http.StatusInternalServerError)
 		return
 	}
 
 	zipAndReturnFiles(w, result)
-	fmt.Fprintf(w, "Files received and processed")
 }
 
 /*
@@ -82,5 +86,7 @@ func zipAndReturnFiles(w http.ResponseWriter, files map[string][]byte) {
 
 	w.Header().Set("Content-Disposition", "attachment; filename=schedules.zip")
 	w.Header().Set("Content-Type", "application/zip")
+	// Indicate processing succeeded; useful for clients that expect metadata
+	w.Header().Set("X-Processed", "true")
 	w.Write(buf.Bytes())
 }
